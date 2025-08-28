@@ -1,4 +1,4 @@
-import React, { ReactNode } from 'react';
+import React, { ReactNode, useRef } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { LoadingSpinner } from './LoadingSpinner';
@@ -13,15 +13,22 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { isAuthenticated, loading, serverError, admin } = useAuth();
   const { addNotification } = useNotification();
   const location = useLocation();
+  const notificationShown = useRef(false);
 
   useEffect(() => {
     // Se o usuário estava autenticado mas perdeu a sessão, mostrar notificação
-    if (!loading && !isAuthenticated && !serverError && location.pathname !== '/login') {
+    if (!loading && !isAuthenticated && !serverError && location.pathname !== '/login' && !notificationShown.current) {
       addNotification({
         type: 'warning',
         title: 'Sessão Expirada',
         message: 'Sua sessão expirou. Faça login novamente.'
       });
+      notificationShown.current = true;
+    }
+
+    // Reset the flag when user becomes authenticated again
+    if (isAuthenticated) {
+      notificationShown.current = false;
     }
   }, [isAuthenticated, loading, serverError, location.pathname, addNotification]);
 
