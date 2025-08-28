@@ -5,15 +5,43 @@ import { useNotification } from '../contexts/NotificationContext';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
 import { Card } from '../components/Card';
-import { Lock, User, Shield, Sparkles } from 'lucide-react';
+import { Lock, User, Shield, Sparkles, AlertTriangle, RefreshCw } from 'lucide-react';
 
 export const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, serverError, checkServerHealth } = useAuth();
   const { addNotification } = useNotification();
   const navigate = useNavigate();
+
+  const handleRetryConnection = async () => {
+    setLoading(true);
+    try {
+      const healthy = await checkServerHealth();
+      if (healthy) {
+        addNotification({
+          type: 'success',
+          title: 'Conexão Restaurada',
+          message: 'Servidor está disponível novamente.'
+        });
+      } else {
+        addNotification({
+          type: 'error',
+          title: 'Servidor Indisponível',
+          message: 'O servidor ainda não está respondendo. Tente novamente em alguns instantes.'
+        });
+      }
+    } catch (error) {
+      addNotification({
+        type: 'error',
+        title: 'Erro de Conexão',
+        message: 'Não foi possível verificar o status do servidor.'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,6 +65,42 @@ export const Login: React.FC = () => {
       setLoading(false);
     }
   };
+
+  // Se houver erro de servidor, mostrar tela de erro
+  if (serverError) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
+        <Card className="w-full max-w-lg backdrop-blur-xl bg-white/95 shadow-2xl border-0">
+          <div className="text-center p-8">
+            <div className="flex justify-center mb-6">
+              <div className="bg-red-100 rounded-full p-4">
+                <AlertTriangle className="text-red-600" size={48} />
+              </div>
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-4">
+              Servidor Indisponível
+            </h1>
+            <p className="text-gray-600 mb-6">
+              O servidor não está respondendo. Isso pode acontecer durante manutenções ou atualizações.
+            </p>
+            <div className="space-y-4">
+              <Button 
+                onClick={handleRetryConnection}
+                disabled={loading}
+                className="w-full"
+              >
+                <RefreshCw size={16} className="mr-2" />
+                {loading ? 'Verificando...' : 'Tentar Novamente'}
+              </Button>
+              <div className="text-sm text-gray-500">
+                <p>Se o problema persistir, entre em contato com o suporte técnico.</p>
+              </div>
+            </div>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
@@ -131,8 +195,8 @@ export const Login: React.FC = () => {
 
         <div className="mt-10 text-center text-sm text-gray-600 border-t border-gray-100 pt-6">
           <div className="flex items-center justify-center space-x-2">
-            <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse shadow-lg"></div>
-            <span className="font-medium">Sistema Online e Seguro</span>
+            <div className={`w-3 h-3 rounded-full animate-pulse shadow-lg ${serverError ? 'bg-red-500' : 'bg-green-500'}`}></div>
+            <span className="font-medium">{serverError ? 'Verificando Servidor...' : 'Sistema Online e Seguro'}</span>
           </div>
           <div className="mt-2 text-xs text-gray-500">
             Powered by Wcore Tecnologia

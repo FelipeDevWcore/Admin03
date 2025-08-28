@@ -2,15 +2,18 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { authService } from '../services/authService';
 import { Admin } from '../types/admin';
 import { AccessProfile } from '../types/profile';
+import { useNotification } from './NotificationContext';
 
 interface AuthContextType {
   admin: Admin | null;
   profile: AccessProfile | null;
   loading: boolean;
+  serverError: boolean;
   login: (email: string, senha: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
   hasPermission: (module: string, action: string) => boolean;
+  checkServerHealth: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -31,10 +34,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [admin, setAdmin] = useState<Admin | null>(null);
   const [profile, setProfile] = useState<AccessProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [serverError, setServerError] = useState(false);
 
   useEffect(() => {
     const initializeAuth = async () => {
       try {
+        // Verificar se o servidor está disponível
+        const serverHealthy = await authService.checkServerHealth();
+        if (!serverHealthy) {
+          setServerError(true);
+          setLoading(false);
+          return;
+        }
+        
+        setServerError(false);
         const token = localStorage.getItem('admin_token');
         if (token) {
           const adminData = await authService.validateToken(token);
@@ -51,7 +64,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           }
         }
       } catch (error) {
+        console.error('Erro na inicialização da autenticação:', error);
         localStorage.removeItem('admin_token');
+        setAdmin(null);
+        setProfile(null);
       } finally {
         setLoading(false);
       }
@@ -60,8 +76,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     initializeAuth();
   }, []);
 
+  // Verificar periodicamente se o servidor está disponível
+  useEffect(() => {
+    if (!serverError && admin) {
+      const interval = setInterval(async () => {
+        try {
+          const healthy = await authService.checkServerHealth();
+          if (!healthy) {
+            setServerError(true);
+          }
+        } catch (error) {
+          console.error('Erro ao verificar saúde do servidor:', error);
+        }
+      }, 60000); // Verificar a cada minuto
+
+      return () => clearInterval(interval);
+    }
+  }, [admin, serverError]);
+
   const login = async (email: string, senha: string) => {
     try {
+      // Verificar se o servidor está disponível antes de tentar login
+      const serverHealthy = await authService.checkServerHealth();
+      if (!serverHealthy) {
+        setServerError(true);
+        throw new Error('Servidor não está disponível. Tente novamente em alguns instantes.');
+      }
+      
+      setServerError(false);
       const response = await authService.login(email, senha);
       setAdmin(response.admin);
       localStorage.setItem('admin_token', response.token);
@@ -79,14 +121,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
     } catch (error) {
       console.error('Erro no login:', error);
+      
+      // Se for erro de servidor, marcar como erro de servidor
+      if (error instanceof Error && error.message.includes('servidor')) {
+        setServerError(true);
+      }
+      
       throw error;
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('admin_token');
+  const logout = async () => {
+    try {
+      await authService.logout();
+    } catch (error) {
+      console.error('Erro ao fazer logout:', error);
+    }
     setAdmin(null);
     setProfile(null);
+  };
+
+  const checkServerHealth = async (): Promise<boolean> => {
+    try {
+      const healthy = await authService.checkServerHealth();
+      setServerError(!healthy);
+      return healthy;
+    } catch (error) {
+      setServerError(true);
+      return false;
+    }
   };
 
   const hasPermission = (module: string, action: string): boolean => {
@@ -137,10 +200,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     admin,
     profile,
     loading,
+    serverError,
     login,
     logout,
     isAuthenticated: !!admin,
-    hasPermission
+    hasPermission,
+    checkServerHealth
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

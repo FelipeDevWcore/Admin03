@@ -1,6 +1,7 @@
 import React, { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useNotification } from '../contexts/NotificationContext';
 import { 
   LayoutDashboard, 
   Users, 
@@ -11,7 +12,8 @@ import {
   BellRing,
   FileText,
   Shield,
-  CreditCard
+  CreditCard,
+  AlertTriangle
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -19,9 +21,10 @@ interface LayoutProps {
 }
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
-  const { admin, logout } = useAuth();
+  const { admin, logout, serverError, checkServerHealth } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const { addNotification } = useNotification();
 
   const handleLogout = async () => {
     try {
@@ -29,6 +32,27 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       navigate('/login');
     } catch (error) {
       console.error('Erro ao fazer logout:', error);
+      // Mesmo com erro, redirecionar para login
+      navigate('/login');
+    }
+  };
+
+  const handleRetryConnection = async () => {
+    try {
+      const healthy = await checkServerHealth();
+      if (healthy) {
+        addNotification({
+          type: 'success',
+          title: 'Conexão Restaurada',
+          message: 'Servidor está disponível novamente.'
+        });
+      }
+    } catch (error) {
+      addNotification({
+        type: 'error',
+        title: 'Erro de Conexão',
+        message: 'Não foi possível verificar o status do servidor.'
+      });
     }
   };
 
@@ -47,8 +71,28 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
+      {/* Server Error Banner */}
+      {serverError && (
+        <div className="fixed top-0 left-0 right-0 bg-red-600 text-white px-4 py-2 z-50">
+          <div className="flex items-center justify-between max-w-7xl mx-auto">
+            <div className="flex items-center space-x-2">
+              <AlertTriangle size={16} />
+              <span className="text-sm font-medium">
+                Servidor indisponível. Algumas funcionalidades podem não funcionar.
+              </span>
+            </div>
+            <button
+              onClick={handleRetryConnection}
+              className="text-sm underline hover:no-underline"
+            >
+              Tentar reconectar
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar */}
-      <div className="w-64 bg-white shadow-lg">
+      <div className={`w-64 bg-white shadow-lg ${serverError ? 'mt-10' : ''}`}>
         <div className="p-6 border-b bg-gradient-to-r from-blue-50 to-purple-50">
           <div className="flex items-center space-x-3 mb-4">
             <div className="bg-white rounded-xl p-2 shadow-lg">
@@ -98,7 +142,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+      <div className={`flex-1 flex flex-col ${serverError ? 'mt-10' : ''}`}>
         {/* Header */}
         <header className="bg-white shadow-sm border-b px-6 py-4">
           <div className="flex items-center justify-between">

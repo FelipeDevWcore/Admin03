@@ -6,8 +6,62 @@ interface LoginResponse {
   token: string;
 }
 
+interface ApiError {
+  message: string;
+  status?: number;
+}
+
 class AuthService {
   private baseURL = import.meta.env.VITE_API_URL || '/Admin/api';
+
+  private async handleApiResponse(response: Response) {
+    if (!response.ok) {
+      let error: ApiError;
+      try {
+        error = await response.json();
+      } catch (e) {
+        // Se não conseguir fazer parse do JSON, criar erro genérico
+        error = { 
+          message: this.getErrorMessageByStatus(response.status),
+          status: response.status 
+        };
+      }
+      
+      // Se for erro 401 ou 403, limpar token e redirecionar
+      if (response.status === 401 || response.status === 403) {
+        this.clearAuthData();
+        window.location.href = '/Admin/login';
+      }
+      
+      throw new Error(error.message || 'Erro de comunicação com o servidor');
+    }
+    return response;
+  }
+
+  private getErrorMessageByStatus(status: number): string {
+    switch (status) {
+      case 400:
+        return 'Dados inválidos enviados para o servidor';
+      case 401:
+        return 'Credenciais inválidas ou sessão expirada';
+      case 403:
+        return 'Acesso negado';
+      case 404:
+        return 'Serviço não encontrado. Verifique se o servidor está rodando';
+      case 500:
+        return 'Erro interno do servidor';
+      case 502:
+        return 'Servidor indisponível';
+      case 503:
+        return 'Serviço temporariamente indisponível';
+      default:
+        return 'Erro de comunicação com o servidor';
+    }
+  }
+
+  private clearAuthData() {
+    localStorage.removeItem('admin_token');
+  }
 
   async login(email: string, senha: string): Promise<LoginResponse> {
     try {
@@ -24,20 +78,17 @@ class AuthService {
 
       console.log('Status da resposta:', response.status);
       
-      if (!response.ok) {
-        let error;
-        try {
-          error = await response.json();
-        } catch (e) {
-          error = { message: 'Erro de comunicação com o servidor' };
-        }
-        console.error('Erro da API:', error);
-        throw new Error(error.message || 'Erro ao fazer login');
-      }
+      await this.handleApiResponse(response);
 
       return await response.json();
     } catch (error) {
       console.error('Erro no authService.login:', error);
+      
+      // Se for erro de rede, mostrar mensagem específica
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        throw new Error('Não foi possível conectar ao servidor. Verifique sua conexão e se o servidor está rodando.');
+      }
+      
       throw error;
     }
   }
@@ -51,12 +102,12 @@ class AuthService {
         },
       });
 
-      if (!response.ok) {
-        throw new Error('Token inválido');
-      }
+      await this.handleApiResponse(response);
 
       return await response.json();
     } catch (error) {
+      // Se token for inválido, limpar dados de auth
+      this.clearAuthData();
       throw error;
     }
   }
@@ -75,6 +126,7 @@ class AuthService {
         console.error('Erro ao fazer logout:', error);
       }
     }
+    this.clearAuthData();
   }
 
   async getProfile(profileId: number): Promise<AccessProfile> {
@@ -86,13 +138,26 @@ class AuthService {
         },
       });
 
-      if (!response.ok) {
-        throw new Error('Erro ao carregar perfil');
-      }
+      await this.handleApiResponse(response);
 
       return await response.json();
     } catch (error) {
       throw error;
+    }
+  }
+
+  // Método para verificar se o servidor está disponível
+  async checkServerHealth(): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseURL}/health`, {
+        method: 'GET',
+        timeout: 5000
+      } as any);
+      
+      return response.ok;
+    } catch (error) {
+      console.error('Servidor não está respondendo:', error);
+      return false;
     }
   }
 }
